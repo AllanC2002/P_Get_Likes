@@ -7,20 +7,19 @@ name: Docker
 
 on:
   schedule:
-    - cron: '23 21 * * *'
+    - cron: '35 18 * * *'
   push:
-    branches: [ "main" ]
+    branches: [ "qa" ]
     # Publish semver tags as releases.
     tags: [ 'v*.*.*' ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "qa" ]
 
 env:
   # Use docker.io for Docker Hub if empty
-  REGISTRY: ghcr.io
+  REGISTRY: docker.io
   # github.repository as <account>/<repo>
-  IMAGE_NAME: ${{ github.repository }}
-
+  IMAGE_NAME: ${{ secrets.DOCKER_REPO }}/get_likes_service
 
 jobs:
   build:
@@ -57,9 +56,9 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d # v3.0.0
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: docker.io
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_TOKEN }}
 
       # Extract metadata (tags, labels) for Docker
       # https://github.com/docker/metadata-action
@@ -75,7 +74,7 @@ jobs:
         id: build-and-push
         uses: docker/build-push-action@0565240e2d4ab88bba5387d719585280857ece09 # v5.0.0
         with:
-          context: .
+          context: ./get_likes_service
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -93,6 +92,35 @@ jobs:
           # https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-an-intermediate-environment-variable
           TAGS: ${{ steps.meta.outputs.tags }}
           DIGEST: ${{ steps.build-and-push.outputs.digest }}
-        # This step uses the identity token to provision an ephemeral certificate
-        # against the sigstore community Fulcio instance.
         run: echo "${TAGS}" | xargs -I {} cosign sign --yes {}@${DIGEST}
+
+  deploy:
+      name: qa Get_Likes_Service
+      needs: build
+      runs-on: ubuntu-latest
+
+      steps:
+        - name: Deploy EC2
+          uses: appleboy/ssh-action@v1.0.3
+          with:
+            host: ${{ secrets.EC2_IP }}
+            username: ubuntu
+            key: ${{ secrets.EC2_PEM }}
+            script: |
+              docker stop get_likes_service || true
+              docker rm get_likes_service || true
+              docker rmi ${{ secrets.DOCKER_REPO }}/get_likes_service:qa || true
+
+              docker pull ${{ secrets.DOCKER_REPO }}/get_likes_service:qa
+
+              docker run -d \
+                --restart always \
+                --name get_likes_service \
+                -p 8080:8080 \
+                -e MONGO_HOSTIP=${{ secrets.MONGO_HOSTIP }} \
+                -e MONGO_PORT=${{ secrets.MONGO_PORT }} \
+                -e MONGO_USER=${{ secrets.MONGO_USER }} \
+                -e MONGO_PASSWORD=${{ secrets.MONGO_PASSWORD }} \
+                -e MONGO_DB=${{ secrets.MONGO_DB }} \
+                -e SECRET_KEY=${{ secrets.SECRET_KEY }} \
+                ${{ secrets.DOCKER_REPO }}/get_likes_service:qa
