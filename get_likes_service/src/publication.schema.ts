@@ -25,3 +25,5 @@ export class Publication {
 }
 
 export const PublicationSchema = SchemaFactory.createForClass(Publication);
+
+
