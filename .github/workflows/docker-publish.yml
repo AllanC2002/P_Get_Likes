@@ -124,4 +124,4 @@ jobs:
                 -e MONGO_PASSWORD=${{ secrets.MONGO_PASSWORD }} \
                 -e MONGO_DB=${{ secrets.MONGO_DB }} \
                 -e SECRET_KEY=${{ secrets.SECRET_KEY }} \
-                ${{ secrets.DOCKER_REPO }}/:qa
+                ${{ secrets.DOCKER_REPO }}:qa
